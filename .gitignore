@@ -1,0 +1,11 @@
+# Ignore Node.js build and runtime environment
+node_modules/
+dist/
+*.log
+.env
+
+# Ignore development dependencies and scripts
+devDependencies/
+test/
+*.test.ts
+*.spec.ts
