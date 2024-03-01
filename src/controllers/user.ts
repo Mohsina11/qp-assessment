@@ -3,6 +3,7 @@ import { EntityManager, MoreThan,MoreThanOrEqual, getManager, getRepository } fr
 import { GroceryItem } from '../entities/GroceryItem';
 import { Order } from '../entities/Order';
 import { UserOrder } from '../entities/UserOrderMapping';
+import { User } from '../entities/User';
 import dataSource from "../db/dataSourceLocal";
 import { v4 as uuidv4 } from 'uuid';
 
@@ -112,6 +113,31 @@ class UserController {
     } catch (error) {
       console.error('Error placing order:', error);
       return res.status(500).json({ success:false,error: 'Internal Server Error' });
+    }
+  }
+
+  async addUser(req: Request, res: Response){
+    try {
+      const { email, phone, username, password } = req.body;
+      if (!email || !phone || !username || !password) {
+        return res.status(400).json({ error: 'Mandatory fields are missing' });
+      }
+      const userRepository = dataSource.getRepository(User);
+      const existingUser = await userRepository.findOne({ where: [{ email:email }, { phone:phone },{username:username}] });
+  
+      if (existingUser) {
+        return res.status(409).json({ error: 'User with the same email or phone already exists' });
+      }
+      let newUser = new User();
+      newUser.email=email;
+      newUser.phone=phone;
+      newUser.password=password;
+      newUser.username=username;
+      newUser=await userRepository.save(newUser);
+      res.status(201).json({ success:true,message: `User created successfully with Id ${newUser.userId}`});
+    } catch (error) {
+      console.error('Error during user signup:', error);
+      res.status(500).json({success:false,error: 'Internal Server Error' });
     }
   }
 }
