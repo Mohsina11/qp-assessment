@@ -11,7 +11,7 @@ let connectionOptions: DataSourceOptions = {
   synchronize: false,
   logging: true,
   entities: ["src/entities/*.ts"],
-  migrations: ["src/migrations/*{.ts,.js}"], // where our migrations reside
+  migrations: ["src/migrations/*.ts"], 
 };
 const dataSource = new DataSource(connectionOptions);
 export default dataSource;

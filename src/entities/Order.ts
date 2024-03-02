@@ -1,5 +1,3 @@
-// src/entities/Order.ts
-
 import {
   Entity,
   PrimaryGeneratedColumn,
@@ -8,6 +6,7 @@ import {
   JoinColumn,
 } from "typeorm";
 import { GroceryItem } from "./GroceryItem";
+import { UserOrder } from "./UserOrderMapping";
 
 @Entity({ name: "order_details" })
 export class Order {
@@ -15,31 +14,25 @@ export class Order {
   id: number = 0;
 
   @Column()
-  orderId: string = "";
+  order_mapping_Id: string = "";
 
-  @ManyToOne(() => GroceryItem, { eager: true })
-  @JoinColumn({ name: "groceryId" })
-  groceryItem: GroceryItem = new GroceryItem();
+  @Column()
+  groceryId: number = 0;
 
   @Column()
   quantity: number = 0;
 
-  @Column("decimal", { precision: 10, scale: 2 })
+  @Column({ type: "decimal", precision: 10, scale: 2 })
   unitPrice: number = 0.0;
 
-  @Column("decimal", { precision: 10, scale: 2 })
+  @Column({ type: "decimal", precision: 10, scale: 2 })
   totalPrice: number = 0.0;
 
-  @Column({ type: "timestamp", default: () => "CURRENT_TIMESTAMP" })
-  ordered_at: Date = new Date();
+  @ManyToOne(() => UserOrder)
+  @JoinColumn({ name: "order_mapping_Id" })
+  userOrder: UserOrder = new UserOrder();
 
-  @Column({ type: "timestamp" })
-  delivered_at: Date = new Date();
-
-  @Column({
-    type: "timestamp",
-    default: () => "CURRENT_TIMESTAMP",
-    onUpdate: "CURRENT_TIMESTAMP",
-  })
-  updated_at: Date = new Date();
+  @ManyToOne(() => GroceryItem)
+  @JoinColumn({ name: "groceryId" })
+  groceryItem: GroceryItem = new GroceryItem();
 }

@@ -1,29 +1,34 @@
-// src/entities/UserOrder.ts
+import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, ManyToOne, JoinColumn, PrimaryColumn } from 'typeorm';
+import { User } from './User';
 
-import {
-  Entity,
-  ManyToOne,
-  PrimaryGeneratedColumn,
-  JoinColumn,
-  PrimaryColumn,
-  Column,
-} from "typeorm";
-import { User } from "./User";
-import { Order } from "./Order";
-
-@Entity({ name: "user_order_mapping" })
+@Entity({ name: 'user_orders' })
 export class UserOrder {
-  @PrimaryGeneratedColumn()
-  id: number = 0;
+  @PrimaryColumn()
+  orderId:string='';
 
-  @ManyToOne(() => User, { eager: true })
-  @JoinColumn({ name: "userId" })
-  user: User = new User();
+  @Column()
+  userId: number=0;
 
-  @ManyToOne(() => Order, { eager: true })
-  @JoinColumn({ name: "orderId" })
-  order: Order = new Order();
+  @Column({ type: 'decimal', precision: 10, scale: 2 })
+  orderTotal: number=0.0;
 
-  @Column("decimal", { precision: 10, scale: 2 })
-  orderTotal: number = 0.0;
+  @Column({ type: 'timestamp', default: () => 'CURRENT_TIMESTAMP' })
+  ordered_at: Date=new Date();
+
+  @Column({ type: 'timestamp', default: () => 'CURRENT_TIMESTAMP' })
+  delivered_at: Date=new Date();
+
+  @UpdateDateColumn({ type: 'datetime', default: () => 'CURRENT_TIMESTAMP',onUpdate: 'CURRENT_TIMESTAMP' })
+  updated_at: Date=new Date();
+
+  @Column({
+    type: 'enum',
+    enum: ['pending', 'completed'],
+    default: 'pending',
+  })
+  status: 'pending' | 'completed'='pending';
+
+  @ManyToOne(() => User)
+  @JoinColumn({ name: 'userId' })
+  user: User=new User();
 }

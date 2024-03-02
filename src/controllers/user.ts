@@ -1,11 +1,5 @@
 import { Request, Response } from "express";
-import {
-  EntityManager,
-  MoreThan,
-  MoreThanOrEqual,
-  getManager,
-  getRepository,
-} from "typeorm";
+import { MoreThan, getRepository } from "typeorm";
 import { GroceryItem } from "../entities/GroceryItem";
 import { Order } from "../entities/Order";
 import { UserOrder } from "../entities/UserOrderMapping";
@@ -52,89 +46,88 @@ class UserController {
 
   async bookItems(req: Request, res: Response) {
     try {
-      // Validate required parameters
       const userId: number = parseInt(req.params.userId);
-      console.log("userId", userId);
       const { items } = req.body;
-      console.log(req.body);
-      console.log(items);
-      console.log(Array.isArray(items));
-      console.log(items.length);
       if (!items || !Array.isArray(items) || items.length === 0) {
         return res.status(400).json({ error: "Invalid order details" });
       }
-
-      // Use transaction to ensure atomicity
-      await dataSource.transaction(
-        async (transactionalEntityManager: EntityManager) => {
-          const groceryRepository =
-            transactionalEntityManager.getRepository(GroceryItem);
-          const orderRepository =
-            transactionalEntityManager.getRepository(Order);
-          const userOrderRepository = dataSource.getRepository(UserOrder);
-          const orderId: string = uuidv4();
-          let totalOrderPrice: number = 0.0;
-          const processedGroceryItems: ProcessedGroceryItem[] = [];
-          // Validate all items and quantity requested for items are first
-          for (const item of items) {
-            const { groceryId, quantity } = item;
-            if (!groceryId || !quantity || quantity <= 0) {
-              return res
-                .status(400)
-                .json({ error: "Invalid item details in the order" });
-            }
-            const groceryItem = await groceryRepository.findOne({
-              where: { groceryId: groceryId },
-            });
-            // Check if the grocery item exists
-            if (!groceryItem) {
-              return res
-                .status(404)
-                .json({ error: `Grocery item with ID ${groceryId} not found` });
-            }
-
-            // Check if there is enough quantity in stock
-            if (groceryItem.quantity < quantity) {
-              return res.status(400).json({
-                error: `Insufficient quantity in stock for item ${groceryItem.name}`,
-              });
-            }
-
-            processedGroceryItems.push({
-              groceryItem: groceryItem,
-              orderedQuantity: quantity,
-            });
+      const queryRunner = dataSource.createQueryRunner();
+      const groceryRepository = queryRunner.manager.getRepository(GroceryItem);
+      const userOrderRepository = queryRunner.manager.getRepository(UserOrder);
+      const orderRepository = queryRunner.manager.getRepository(Order);
+      await queryRunner.startTransaction();
+      let transactionCompleted = true,
+        errormessage: string = "",
+        errorCode: number = 500;
+      try {
+        let totalOrderPrice: number = 0.0;
+        const processedGroceryItems: ProcessedGroceryItem[] = [];
+        for (const item of items) {
+          const { groceryId, quantity } = item;
+          if (!groceryId || !quantity || quantity <= 0) {
+            errorCode = 400;
+            errormessage = "Invalid item details in the order";
+            throw new Error(errormessage);
           }
-
-          for (const processingItem of processedGroceryItems) {
-            const currentOrderItem = new Order();
-            currentOrderItem.orderId = orderId;
-            currentOrderItem.groceryItem.groceryId =
-              processingItem.groceryItem.groceryId;
-            currentOrderItem.quantity = processingItem.orderedQuantity;
-            currentOrderItem.unitPrice = processingItem.groceryItem.unitprice;
-            currentOrderItem.totalPrice =
-              currentOrderItem.quantity * currentOrderItem.unitPrice;
-            totalOrderPrice += currentOrderItem.totalPrice;
-            const orderData = await orderRepository.save(currentOrderItem);
-            processingItem.groceryItem.quantity =
-              processingItem.groceryItem.quantity - currentOrderItem.quantity;
-            await groceryRepository.save(processingItem.groceryItem);
+          const groceryItem = await groceryRepository.findOne({
+            where: { groceryId: groceryId },
+          });
+          if (!groceryItem) {
+            errorCode = 404;
+            errormessage = `Grocery item with ID ${groceryId} not found`;
+            throw new Error(errormessage);
           }
-
-          const userOrderDetails = new UserOrder();
-          userOrderDetails.order.orderId = orderId;
-          userOrderDetails.user.userId = userId;
-          userOrderDetails.orderTotal = totalOrderPrice;
-          userOrderRepository.save(userOrderDetails);
-
-          // Send a success response
-          return res.json({
-            success: true,
-            message: "Order placed successfully",
+          if (groceryItem.quantity < quantity) {
+            errorCode = 400;
+            errormessage = `Insufficient quantity in stock for item ${groceryItem.name}`;
+            throw new Error(errormessage);
+          }
+          totalOrderPrice += groceryItem.quantity * groceryItem.unitprice;
+          processedGroceryItems.push({
+            groceryItem: groceryItem,
+            orderedQuantity: quantity,
           });
         }
-      );
+        const orderId = uuidv4();
+        let userOrderDetails = new UserOrder();
+        userOrderDetails.orderId = orderId;
+        userOrderDetails.user.userId = userId;
+        userOrderDetails.orderTotal = totalOrderPrice;
+        userOrderDetails = await userOrderRepository.save(userOrderDetails);
+
+        for (const processingItem of processedGroceryItems) {
+          const currentOrderItem = new Order();
+          currentOrderItem.order_mapping_Id = orderId;
+          currentOrderItem.userOrder.orderId = orderId;
+          currentOrderItem.groceryId = processingItem.groceryItem.groceryId;
+          currentOrderItem.groceryItem.groceryId =
+            processingItem.groceryItem.groceryId;
+          currentOrderItem.quantity = processingItem.orderedQuantity;
+          currentOrderItem.unitPrice = processingItem.groceryItem.unitprice;
+          currentOrderItem.totalPrice =
+            currentOrderItem.quantity * currentOrderItem.unitPrice;
+          await orderRepository.save(currentOrderItem);
+          processingItem.groceryItem.quantity =
+            processingItem.groceryItem.quantity - currentOrderItem.quantity;
+          await groceryRepository.save(processingItem.groceryItem);
+        }
+        await queryRunner.commitTransaction();
+      } catch (err) {
+        transactionCompleted = false;
+        await queryRunner.rollbackTransaction();
+      } finally {
+        await queryRunner.release();
+      }
+
+      if (transactionCompleted) {
+        return res
+          .status(200)
+          .json({ success: true, message: "Order placed successfully" });
+      } else {
+        return res
+          .status(errorCode)
+          .json({ success: false, error: errormessage });
+      }
     } catch (error) {
       console.error("Error placing order:", error);
       return res
@@ -165,10 +158,12 @@ class UserController {
       newUser.password = password;
       newUser.username = username;
       newUser = await userRepository.save(newUser);
-      res.status(201).json({
-        success: true,
-        message: `User created successfully with Id ${newUser.userId}`,
-      });
+      res
+        .status(201)
+        .json({
+          success: true,
+          message: `User created successfully with Id ${newUser.userId}`,
+        });
     } catch (error) {
       console.error("Error during user signup:", error);
       res.status(500).json({ success: false, error: "Internal Server Error" });
